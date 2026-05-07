@@ -4,8 +4,8 @@ on:
   schedule:
     - cron: "0 0 * * *"  # 매일 00:00 UTC = 09:00 KST
   workflow_dispatch:
-  # push:
-  #   branches: [ "main" ]
+  push:
+    branches: [ "main" ]
 
 jobs:
   run:
@@ -23,7 +23,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run bot
+      - name: Run Main Bid Bot (본공고 수집)
         env:
           G2B_API_KEY: ${{ secrets.G2B_API_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
@@ -31,3 +31,12 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }} 
         run: |
           python main.py
+
+      - name: Run Pre-Bid Bot (사전공고 수집)
+        env:
+          G2B_API_KEY: ${{ secrets.G2B_API_KEY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }} 
+        run: |
+          python main_pre.py
