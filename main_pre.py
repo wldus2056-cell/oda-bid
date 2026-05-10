@@ -15,8 +15,11 @@ def to_dt_str(dt: datetime) -> str:
     return dt.strftime("%Y%m%d%H%M")
 
 def build_embed(item: dict) -> dict:
-    # 💡 사전공고 API 변수명에 맞게 매핑
-    title = item.get("prcureItemNm") or item.get("bfSpecRgstNm") or "(제목 없음)"
+# 💡 수정: 여러 변수명을 훑어보고, 정 없으면 규격번호라도 제목으로 띄웁니다.
+    raw_title = item.get("prcureItemNm") or item.get("bfSpecRgstNm") or item.get("bizNm") or ""
+    reg_no = item.get("bfSpecRgstNo", "번호알수없음")
+    title = str(raw_title).strip() if raw_title else f"(제목 누락 - 규격번호: {reg_no})"
+    
     org = item.get("dminsttNm", "-")
     deadline = item.get("opnEndDt", "-")  # 의견등록 마감일시
     
@@ -66,11 +69,13 @@ def main():
     keyword_passed = 0
 
     for it in items:
-        # 사전공고용 변수 추출
-        title = it.get("prcureItemNm") or it.get("bfSpecRgstNm", "")
+        # 💡 수정: 로그창(Actions)에도 비어있지 않고 텍스트가 무조건 찍히도록 안전망 구성
+        raw_title = it.get("prcureItemNm") or it.get("bfSpecRgstNm") or it.get("bizNm") or ""
+        reg_no = it.get("bfSpecRgstNo", "번호없음")
+        title = str(raw_title).strip() if raw_title else f"(제목 누락 - 규격번호: {reg_no})"
+        
         org = str(it.get("dminsttNm", ""))
-        reg_no = it.get("bfSpecRgstNo", "")
-        url = f"https://www.g2b.go.kr:8101/ep/preparation/prestd/preStdPublishTenderDetail.do?preStdRegNo={reg_no}" if reg_no else ""
+        url = f"https://www.g2b.go.kr:8101/ep/preparation/prestd/preStdPublishTenderDetail.do?preStdRegNo={reg_no}" if reg_no != "번호없음" else ""
 
         # 1차 키워드 필터 (filters.py)
         if not keyword_match(title):
