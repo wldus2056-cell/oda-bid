@@ -32,7 +32,7 @@ def fetch_bid_list(api_key: str, start_dt: str, end_dt: str) -> list[dict]:
     return fetch_all_pages(url, params)
 
 def fetch_prebid_list(api_key: str, start_dt: str, end_dt: str) -> list[dict]:
-    url = "http://apis.data.go.kr/1230000/ao/HrcspSsstndrdInfoService/getPrcureThngInfoServc"
+    url = "http://apis.data.go.kr/1230000/ao/HrcspSsstndrdInfoService/getPublicPrcureServcInfoServc"
     params = {
         "inqryDiv": 1,
         "serviceKey": unquote(api_key.strip()),
