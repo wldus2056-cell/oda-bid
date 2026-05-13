@@ -39,7 +39,7 @@ def build_embed(item: dict) -> dict:
     if ai_reason:
         fields.append({"name": "필터링 근거", "value": str(ai_reason), "inline": False})
 
-    return {"title": title, "fields": fields}
+    return {"title": title, "color": 0x3498db, "fields": fields}
 
 def main():
     api_key = os.environ["G2B_API_KEY"].strip()
