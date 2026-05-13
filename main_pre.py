@@ -29,8 +29,12 @@ def get_prebid_title(item: dict) -> str:
 
 def build_embed(item: dict) -> dict:
     title = get_prebid_title(item)
-    org = item.get("dminsttNm", "-")
-    deadline = item.get("opnEndDt", "-")  # 의견등록 마감일시
+    
+    # 💡 1. 수요기관 필드명 완벽 대응 (실수요기관명, 발주기관명 등 모두 찔러보기)
+    org = item.get("realDminsttNm") or item.get("orderInsttNm") or item.get("dminsttNm") or "-"
+    
+    # 💡 2. 마감일시 필드명 완벽 대응 (개찰등록/의견등록/접수일자 모두 찔러보기)
+    deadline = item.get("opnRegEndDt") or item.get("opnRegClsDt") or item.get("rcptDt") or item.get("opnEndDt") or "-"
     
     raw_budget = item.get("asignBdgtAmt")
     if raw_budget and str(raw_budget).isdigit():
@@ -38,10 +42,11 @@ def build_embed(item: dict) -> dict:
     else:
         budget = str(raw_budget) if raw_budget else "-"
 
-    # 사전공고 상세페이지 링크 조합
+    # 💡 3. 사전공고 상세페이지 전용 URL (포트번호와 주소 변경)
     reg_no = item.get("bfSpecRgstNo", "")
-    if reg_no:
-        url = f"https://www.g2b.go.kr:8101/ep/preparation/prestd/preStdPublishTenderDetail.do?preStdRegNo={reg_no}"
+    if reg_no and reg_no != "번호없음":
+        # 기존 8101 포트의 잘못된 주소가 아닌 8143 포트의 정확한 상세페이지 주소
+        url = f"https://www.g2b.go.kr:8143/ep/preparation/prestd/preStdDtl.do?preStdRegNo={reg_no}"
     else:
         url = ""
 
@@ -49,7 +54,7 @@ def build_embed(item: dict) -> dict:
 
     fields = [
         {"name": "수요기관", "value": str(org), "inline": True},
-        {"name": "의견등록마감일시", "value": str(deadline), "inline": True},
+        {"name": "의견등록/접수 마감일시", "value": str(deadline), "inline": True},
         {"name": "배정예산액", "value": str(budget), "inline": False},
     ]
     if url:
