@@ -123,7 +123,7 @@ def main():
     if not filtered:
         send_discord(
             webhook_url,
-            content=f"🔜 **ODA 사전공고 알림(일일 요약)**\n{summary_text}\n오늘은 조건에 맞는 사전공고가 없습니다.",
+            content=f"🔔 **ODA 사전공고 알림(일일 요약)**\n{summary_text}\n오늘은 조건에 맞는 사전공고가 없습니다.",
             embeds=None
         )
         return
@@ -137,9 +137,9 @@ def main():
             continue
         embeds = [build_embed(it) for it in chunk]
         
-        content_msg = f"🔜 신규 ODA 사전규격공고 알림 ({i}/{len(chunks)})"
+        content_msg = f"🔔 신규 ODA 사전규격공고 알림 ({i}/{len(chunks)})"
         if i == 1:
-            content_msg = f"🔜 **ODA 사전공고 알림(일일 요약)**\n{summary_text}\n\n{content_msg}"
+            content_msg = f"🔔 **ODA 사전공고 알림(일일 요약)**\n{summary_text}\n\n{content_msg}"
 
         send_discord(
             webhook_url,
