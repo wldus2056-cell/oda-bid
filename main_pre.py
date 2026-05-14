@@ -34,7 +34,7 @@ def build_embed(item: dict) -> dict:
     org = item.get("realDminsttNm") or item.get("orderInsttNm") or item.get("dminsttNm") or "-"
     
     # 💡 2. 마감일시 필드명 완벽 대응 (개찰등록/의견등록/접수일자 모두 찔러보기)
-    deadline = item.get("opnRegEndDt") or item.get("opnRegClsDt") or item.get("rcptDt") or item.get("opnEndDt") or "-"
+    deadline = item.get("opnRegEndDt") or item.get("opnRegClsDt") or item.get("opnEndDt") or "-"
     
     raw_budget = item.get("asignBdgtAmt")
     if raw_budget and str(raw_budget).isdigit():
