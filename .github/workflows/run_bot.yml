@@ -2,7 +2,7 @@ name: run-oda-bid-bot
 
 on:
   schedule:
-    - cron: "0 0 * * *"  # 매일 00:00 UTC = 09:00 KST
+    - cron: "45 23 * * *"  # 매일 23:45 UTC = 08:45 KST
   workflow_dispatch:
   # push:
   #   branches: [ "main" ]
