@@ -1,5 +1,5 @@
-# main.py
 import os
+import time  # 💡 추가됨: 디스코드 메시지 도배 방지(지연)를 위해 필요
 from datetime import datetime, timedelta, timezone
 
 from g2b import fetch_bid_list
@@ -65,26 +65,22 @@ def main():
 
         # 2. 1차 키워드 필터 (filters.py)
         if not keyword_match(title):
-            
-            print(f"[1차탈락] {title}") # ← 추가
-            
+            print(f"[1차탈락] {title}")
             continue
             
-        print(f"[1차통과] {title}") # ← 추가
-        
+        print(f"[1차통과] {title}")
         keyword_passed += 1
 
         # 3. 2차 하이브리드 필터 (ai_filter.py)
         is_oda, reason = gemini_is_oda(title, org, url)
         if is_oda:
-            # 💡 [AI 합격] 같은 텍스트를 강제로 붙이지 않고, ai_filter.py가 주는 값(reason)을 그대로 씁니다.
             it["_ai_reason"] = reason
             filtered.append(it)
         else:
             skipped_ai += 1
             print(f"[제외] {title[:30]}... | 사유: {reason}")
         if not is_oda:
-            print(f"[2차탈락] {title} | {reason}")  # ← 추가
+            print(f"[2차탈락] {title} | {reason}") 
         
     ai_passed = keyword_passed - skipped_ai
     
@@ -106,24 +102,28 @@ def main():
         )
         return
 
-    # 10개씩 묶어서 디스코드로 전송
-    chunk_size = 10
-    chunks = [filtered[i:i+chunk_size] for i in range(0, len(filtered), chunk_size)]
+    # 💡 1. 요약 브리핑 메시지를 먼저 단독으로 보냅니다.
+    summary_msg = (
+        f"📢 **ODA 입찰공고 알림(일일 요약)**\n"
+        f"{summary_text}\n\n"
+        f"🚀 *지금부터 조건에 맞는 상세 공고({len(filtered)}건) 알림을 전송합니다.*"
+    )
+    send_discord(webhook_url, content=summary_msg, embeds=None)
+    time.sleep(1) # 순서가 꼬이지 않도록 잠시 대기
 
-    for i, chunk in enumerate(chunks, start=1):
-        if not chunk:
-            continue
-        embeds = [build_embed(it) for it in chunk]
+    # 💡 2. 10개씩 묶던 chunk 로직 대신, 1개씩 순회하며 전송합니다.
+    for i, it in enumerate(filtered, start=1):
+        embed = build_embed(it)
         
-        content_msg = f"📢 신규 ODA 관련 입찰공고 알림 ({i}/{len(chunks)})"
-        if i == 1:
-            content_msg = f"📢 **ODA 입찰공고 알림(일일 요약)**\n{summary_text}\n\n{content_msg}"
-
         send_discord(
             webhook_url,
-            content=content_msg,
-            embeds=embeds
+            content=f"📢 신규 ODA 관련 입찰공고 알림 ({i}/{len(filtered)})",
+            embeds=[embed]  # embeds 리스트에 embed 1개만 담아 전송
         )
+        time.sleep(0.5) # 디스코드 도배(Rate Limit) 방지용 약간의 지연
+        
+    # (선택 사항) 완료 메시지를 추가하고 싶다면 활성화하세요.
+    # send_discord(webhook_url, content="✅ **모든 알림 전송이 완료되었습니다!**", embeds=None)
 
 if __name__ == "__main__":
     main()
