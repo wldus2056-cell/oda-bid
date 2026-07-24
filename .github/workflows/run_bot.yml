@@ -4,8 +4,8 @@ on:
   schedule:
     - cron: "45 23 * * *"  # 매일 23:45 UTC = 08:45 KST
   workflow_dispatch:
-  # push:
-  #   branches: [ "main" ]
+  push:
+    branches: [ "main" ]
 
 jobs:
   run:
