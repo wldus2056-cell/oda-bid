@@ -8,7 +8,7 @@ def fetch_all_pages(url: str, params: dict) -> list[dict]:
     while True:
         params["pageNo"] = page
         params["numOfRows"] = 999
-        r = requests.get(url, params=params, timeout=30)
+        r = requests.get(url, params=params, timeout=60)
         r.raise_for_status()
         data = r.json()
         items = data.get("response", {}).get("body", {}).get("items") or []
