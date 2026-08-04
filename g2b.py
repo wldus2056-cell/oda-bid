@@ -46,4 +46,25 @@ def fetch_all_pages(url: str, params: dict) -> list[dict]:
 
     return all_data
 
-# (아래 fetch_bid_list, fetch_prebid_list 함수들은 기존 그대로 유지)
+    def fetch_bid_list(api_key: str, start_dt: str, end_dt: str) -> list[dict]:
+        url = "http://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoServc"
+        params = {
+        "inqryDiv": 1,
+        "serviceKey": unquote(api_key.strip()),
+        "inqryBgnDt": start_dt,
+        "inqryEndDt": end_dt,
+        "type": "json",
+        }
+    return fetch_all_pages(url, params)
+
+    def fetch_prebid_list(api_key: str, start_dt: str, end_dt: str) -> list[dict]:
+        url = "http://apis.data.go.kr/1230000/ao/HrcspSsstndrdInfoService/getPublicPrcureServcInfoServc"
+        url = "http://apis.data.go.kr/1230000/ao/HrcspSsstndrdInfoService/getPublicPrcureThngInfoServc"
+        params = {
+        "inqryDiv": 1,
+        "serviceKey": unquote(api_key.strip()),
+        "inqryBgnDt": start_dt,
+        "inqryEndDt": end_dt,
+        "type": "json",
+        }
+    return fetch_all_pages(url, params)
