@@ -1,94 +1,54 @@
+import requests
 import time
 from urllib.parse import unquote
-
-import requests
-
-
-class BidCollectionError(Exception):
-    pass
-
-
-def _parse_response(response: requests.Response) -> tuple[list[dict], int]:
-    try:
-        payload = response.json()
-    except ValueError as e:
-        raise BidCollectionError("나라장터 API가 JSON이 아닌 응답을 반환했습니다.") from e
-
-    response_body = payload.get("response")
-    if not isinstance(response_body, dict):
-        raise BidCollectionError("나라장터 API 응답에 response가 없습니다.")
-
-    header = response_body.get("header", {})
-    result_code = str(header.get("resultCode", "00"))
-    if result_code != "00":
-        result_message = header.get("resultMsg", "알 수 없는 오류")
-        raise BidCollectionError(
-            f"나라장터 API 오류 {result_code}: {result_message}"
-        )
-
-    body = response_body.get("body")
-    if not isinstance(body, dict):
-        raise BidCollectionError("나라장터 API 응답에 body가 없습니다.")
-
-    items = body.get("items") or []
-    if isinstance(items, dict):
-        items = [items]
-    if not isinstance(items, list) or not all(isinstance(item, dict) for item in items):
-        raise BidCollectionError("나라장터 API 응답의 items 형식이 올바르지 않습니다.")
-
-    try:
-        total_count = int(body.get("totalCount", len(items)))
-    except (TypeError, ValueError) as e:
-        raise BidCollectionError("나라장터 API 응답의 totalCount가 올바르지 않습니다.") from e
-
-    return items, total_count
-
 
 def fetch_all_pages(url: str, params: dict) -> list[dict]:
     all_data = []
     page = 1
-    max_retries = 3
-    page_size = 999
+    max_retries = 3  # 💡 최대 3번까지 끈질기게 재시도
 
     while True:
-        request_params = dict(params, pageNo=page, numOfRows=page_size)
-        last_error = None
-
+        params["pageNo"] = page
+        params["numOfRows"] = 999
+        
+        response_successful = False
+        
+        # 💡 에러 방어막: 서버가 뻗었을 때를 대비한 3회 반복 재시도 로직
         for attempt in range(max_retries):
             try:
-                print(f"나라장터 요청: 페이지 {page}, 시도 {attempt + 1}/{max_retries}")
-                response = requests.get(url, params=request_params, timeout=60)
-                response.raise_for_status()
-                items, total_count = _parse_response(response)
-                break
-            except (requests.exceptions.RequestException, BidCollectionError) as e:
-                last_error = e
-                print(f"나라장터 응답 오류: {e}")
-                if attempt + 1 < max_retries:
-                    time.sleep(10 * (2**attempt))
-        else:
-            raise BidCollectionError(
-                f"나라장터 수집 실패: 페이지 {page}, 원인: {last_error}"
-            ) from last_error
-
-        all_data.extend(items)
-        print(f"나라장터 수집: {len(all_data)}/{total_count}건")
-
-        if not items or len(all_data) >= total_count or len(items) < page_size:
+                print(f"📡 공공데이터포털 요청 중... (페이지 {page}, 시도 {attempt+1}/{max_retries})")
+                r = requests.get(url, params=params, timeout=60)
+                r.raise_for_status()
+                response_successful = True
+                break  # 성공하면 재시도 반복문 탈출!
+                
+            except requests.exceptions.RequestException as e:
+                print(f"⚠️ 공공데이터포털 응답 지연 (시도 {attempt+1}/{max_retries}). 10초 후 다시 시도합니다...")
+                time.sleep(10) # 💡 서버가 쉴 수 있게 10초 대기
+                
+        # 3번이나 재시도했는데도 실패했다면, 빈 리스트 반환 (에러로 뻗지 않음)
+        if not response_successful:
+            print("❌ 공공데이터포털 서버가 완전히 응답하지 않습니다. 오늘의 수집을 종료합니다.")
             break
 
+        data = r.json()
+        items = data.get("response", {}).get("body", {}).get("items", [])
+        
+        if not items:
+            break
+            
+        all_data.extend(items)
+        
+        if len(items) < 999:
+            break
+            
         page += 1
-
-    if len(all_data) < total_count:
-        raise BidCollectionError(
-            f"나라장터 수집 누락: 전체 {total_count}건 중 {len(all_data)}건만 수집"
-        )
 
     return all_data
 
-
 def fetch_bid_list(api_key: str, start_dt: str, end_dt: str) -> list[dict]:
-    url = "https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoServc"
+    """본공고(입찰공고) 수집 함수"""
+    url = "http://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoServc"
     params = {
         "inqryDiv": 1,
         "serviceKey": unquote(api_key.strip()),
@@ -98,9 +58,9 @@ def fetch_bid_list(api_key: str, start_dt: str, end_dt: str) -> list[dict]:
     }
     return fetch_all_pages(url, params)
 
-
 def fetch_prebid_list(api_key: str, start_dt: str, end_dt: str) -> list[dict]:
-    url = "https://apis.data.go.kr/1230000/ao/HrcspSsstndrdInfoService/getPublicPrcureThngInfoServc"
+    """사전규격공고 수집 함수"""
+    url = "http://apis.data.go.kr/1230000/ao/HrcspSsstndrdInfoService/getPublicPrcureThngInfoServc"
     params = {
         "inqryDiv": 1,
         "serviceKey": unquote(api_key.strip()),
