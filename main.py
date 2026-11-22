@@ -1,129 +1,168 @@
 import os
-import time  # 💡 추가됨: 디스코드 메시지 도배 방지(지연)를 위해 필요
+import time
 from datetime import datetime, timedelta, timezone
 
-from g2b import fetch_bid_list
-from filters import keyword_match
+from ai_filter import (
+    classify_candidates,
+    make_candidate_id,
+    mandatory_inclusion_reason,
+)
 from discord_notify import send_discord
-from ai_filter import gemini_is_oda
+from filters import keyword_match
+from g2b import BidCollectionError, fetch_bid_list
 
 KST = timezone(timedelta(hours=9))
 
-print("MAIN.PY TOP LOADED")
 
 def to_dt_str(dt: datetime) -> str:
     return dt.strftime("%Y%m%d%H%M")
 
-def build_embed(item: dict) -> dict:
+
+def build_embed(item: dict, review: bool = False) -> dict:
     title = item.get("bidNtceNm", "(제목 없음)")
     org = item.get("dminsttNm", "-")
-    deadline = item.get("bidQlfctRgstDt", "-")
-    
-    # 💡 예산금액 1000단위 콤마(,) 및 '원' 단위 추가 처리
+    deadline = item.get("bidNtceEndDt") or item.get("bidQlfctRgstDt") or "-"
+
     raw_budget = item.get("asignBdgtAmt")
     if raw_budget and str(raw_budget).isdigit():
         budget = f"{int(raw_budget):,}원"
     else:
         budget = str(raw_budget) if raw_budget else "-"
 
-    url = item.get("bidNtceDtlUrl", "")
-    ai_reason = item.get("_ai_reason")
-
     fields = [
         {"name": "수요기관", "value": str(org), "inline": True},
-        {"name": "입찰참가신청마감", "value": str(deadline), "inline": True},
+        {"name": "입찰 마감", "value": str(deadline), "inline": True},
         {"name": "예산금액", "value": str(budget), "inline": False},
     ]
+    url = item.get("bidNtceDtlUrl", "")
     if url:
-        fields.append({"name": "링크", "value": url, "inline": False})
-    if ai_reason:
-        fields.append({"name": "필터링 근거", "value": str(ai_reason), "inline": False})
+        fields.append({"name": "링크", "value": str(url), "inline": False})
+    reason = item.get("_filter_reason")
+    if reason:
+        fields.append({"name": "필터링 근거", "value": str(reason), "inline": False})
 
-    return {"title": title, "color": 0x3498db, "fields": fields}
+    return {
+        "title": str(title),
+        "color": 0xE67E22 if review else 0x3498DB,
+        "fields": fields,
+    }
+
+
+def send_items(webhook_url: str, items: list[dict], label: str, review: bool = False):
+    chunk_size = 10 if review else 1
+    chunks = [items[i:i + chunk_size] for i in range(0, len(items), chunk_size)]
+    for index, chunk in enumerate(chunks, start=1):
+        send_discord(
+            webhook_url,
+            content=f"{label} ({index}/{len(chunks)})",
+            embeds=[build_embed(item, review) for item in chunk],
+        )
+        time.sleep(0.6)
+
 
 def main():
     api_key = os.environ["G2B_API_KEY"].strip()
     webhook_url = os.environ["DISCORD_WEBHOOK_URL"].strip()
 
     now = datetime.now(KST)
-    start = now - timedelta(days=1) 
+    start = now - timedelta(days=1)
     start_dt = to_dt_str(start)
     end_dt = to_dt_str(now)
 
-    items = fetch_bid_list(api_key, start_dt, end_dt)
-    print("TOTAL ITEMS:", len(items))
+    try:
+        items = fetch_bid_list(api_key, start_dt, end_dt)
+    except BidCollectionError as e:
+        send_discord(
+            webhook_url,
+            content=(
+                "ODA 입찰공고 수집에 실패했습니다.\n"
+                "정상적인 0건이 아니므로 GitHub Actions 로그를 확인해 주세요.\n"
+                f"오류: {e}"
+            ),
+        )
+        raise
 
+    print(f"전체 본공고: {len(items)}건")
     filtered = []
-    skipped_ai = 0
-    keyword_passed = 0
-    koica_passed = 0
+    candidates = []
 
-    for it in items:
-        title = it.get("bidNtceNm", "")
-        org = str(it.get("dminsttNm", ""))
-        url = it.get("bidNtceDtlUrl", "")
+    for item in items:
+        title = str(item.get("bidNtceNm", ""))
+        org = str(item.get("dminsttNm", ""))
 
-        # 2. 1차 키워드 필터 (filters.py)
-        if not keyword_match(title):
-            print(f"[1차탈락] {title}")
+        mandatory_reason = mandatory_inclusion_reason(title, org)
+        if mandatory_reason:
+            item["_filter_reason"] = mandatory_reason
+            filtered.append(item)
             continue
-            
-        print(f"[1차통과] {title}")
-        keyword_passed += 1
 
-        # 3. 2차 하이브리드 필터 (ai_filter.py)
-        is_oda, reason = gemini_is_oda(title, org, url)
-        if is_oda:
-            it["_ai_reason"] = reason
-            filtered.append(it)
+        if not keyword_match(f"{title} {org}"):
+            continue
+
+        candidates.append({
+            "id": make_candidate_id(
+                item.get("bidNtceNo"), item.get("bidNtceOrd"), title, org
+            ),
+            "title": title,
+            "org": org,
+            "item": item,
+        })
+
+    results = classify_candidates(candidates)
+    review_required = []
+    ai_passed = 0
+    rule_rejected = 0
+    ai_rejected = 0
+    model_review = 0
+    system_review = 0
+
+    for candidate in candidates:
+        item = candidate["item"]
+        result = results.get(candidate["id"])
+        if result is None:
+            item["_filter_reason"] = "분류 결과가 없어 사람 검토가 필요합니다."
+            review_required.append(item)
+            system_review += 1
+            continue
+
+        item["_filter_reason"] = result.reason
+        if result.decision == "pass":
+            filtered.append(item)
+            ai_passed += 1
+        elif result.decision == "review":
+            review_required.append(item)
+            if result.source == "system":
+                system_review += 1
+            else:
+                model_review += 1
+        elif result.source == "rule":
+            rule_rejected += 1
         else:
-            skipped_ai += 1
-            print(f"[제외] {title[:30]}... | 사유: {reason}")
-        if not is_oda:
-            print(f"[2차탈락] {title} | {reason}") 
-        
-    ai_passed = keyword_passed - skipped_ai
-    
-    display_start = start.strftime("%m월 %d일 %H:%M")
-    display_end = now.strftime("%m월 %d일 %H:%M")
-    
+            ai_rejected += 1
+
     summary_text = (
-        f"- 조회기간: {display_start} ~ {display_end} (최근 1일)\n"
+        f"- 조회기간: {start.strftime('%m월 %d일 %H:%M')} ~ "
+        f"{now.strftime('%m월 %d일 %H:%M')}\n"
+        f"- 수집 상태: 정상\n"
         f"- 전체 공고: {len(items)}건\n"
-        f"- 1차 키워드 통과: {keyword_passed}건\n"
-        f"- 2차 AI 필터링 통과: {ai_passed}건 (제외 {skipped_ai}건)"
+        f"- 강제 포함(KOICA·KOFIH·EDCF): {len(filtered) - ai_passed}건\n"
+        f"- AI 분류 통과: {ai_passed}건\n"
+        f"- 조건 미충족: 규칙 {rule_rejected}건, AI {ai_rejected}건\n"
+        f"- 사람 검토 필요: {len(review_required)}건 "
+        f"(모델 보류 {model_review}건, 시스템 오류 {system_review}건)"
+    )
+    send_discord(
+        webhook_url,
+        content=f"ODA 입찰공고 알림(일일 요약)\n{summary_text}",
     )
 
-    if not filtered:
-        send_discord(
-            webhook_url,
-            content=f"📢 ODA 입찰공고 알림(일일 요약)\n{summary_text}\n오늘은 조건에 맞는 공고가 없습니다.",
-            embeds=None
-        )
-        return
+    if filtered:
+        send_items(webhook_url, filtered, "ODA 관련 입찰공고")
+    if review_required:
+        send_items(webhook_url, review_required, "사람 검토 필요 공고", review=True)
+    if not filtered and not review_required:
+        send_discord(webhook_url, content="오늘은 조건에 맞는 입찰공고가 없습니다.")
 
-    # 💡 1. 요약 브리핑 메시지를 먼저 단독으로 보냅니다.
-    summary_msg = (
-        f"📢 **ODA 입찰공고 알림(일일 요약)**\n"
-        f"{summary_text}\n\n"
-        f"🚀 *지금부터 조건에 맞는 상세 공고({len(filtered)}건) 알림을 전송합니다.*"
-    )
-    send_discord(webhook_url, content=summary_msg, embeds=None)
-    time.sleep(1) # 순서가 꼬이지 않도록 잠시 대기
-
-    # 💡 2. 10개씩 묶던 chunk 로직 대신, 1개씩 순회하며 전송합니다.
-    for i, it in enumerate(filtered, start=1):
-        embed = build_embed(it)
-        
-        send_discord(
-            webhook_url,
-            content=f"📢 신규 ODA 관련 입찰공고 알림 ({i}/{len(filtered)})",
-            embeds=[embed]  # embeds 리스트에 embed 1개만 담아 전송
-        )
-        time.sleep(0.5) # 디스코드 도배(Rate Limit) 방지용 약간의 지연
-        
-    # (선택 사항) 완료 메시지를 추가하고 싶다면 활성화하세요.
-    # send_discord(webhook_url, content="✅ **모든 알림 전송이 완료되었습니다!**", embeds=None)
 
 if __name__ == "__main__":
     main()
